@@ -19,11 +19,9 @@ const activeUsers = new Map();
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
-  
-  // Send existing users to the newly connected user
+
   socket.emit('existing-users', Array.from(activeUsers.values()));
   
-  // Broadcast new user to existing users
   socket.broadcast.emit('user-connected', { id: socket.id });
   
   socket.on('send-location', (data) => {
@@ -40,7 +38,6 @@ io.on('connection', (socket) => {
     
     activeUsers.set(socket.id, userData);
     
-    // Broadcast location to all clients except sender
     socket.broadcast.emit('receive-location', userData);
   });
   

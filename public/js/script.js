@@ -15,12 +15,22 @@ const users = {};
 
 const socket = io();
 
+document.addEventListener('DOMContentLoaded', function() {
+  if (!shareBtn || !simulateBtn || !clearBtn) {
+    console.error('Required DOM elements not found');
+  }
+});
+
 function updateStatus(message, isConnected) {
-  statusElement.textContent = message;
-  statusElement.className = isConnected ? 'connected' : 'disconnected';
+  if (statusElement) {
+    statusElement.textContent = message;
+    statusElement.className = isConnected ? 'connected' : 'disconnected';
+  }
 }
 
 function updateUserList() {
+  if (!usersList) return;
+  
   usersList.innerHTML = '';
   Object.values(users).forEach(user => {
     const li = document.createElement('li');
@@ -33,6 +43,8 @@ function updateUserList() {
 }
 
 function updateMarker(id, lat, lon, timestamp) {
+  if (!id || lat == null || lon == null || timestamp == null) return;
+  
   const popupContent = `
     <div class="marker-popup">
       <strong>User:</strong> ${id.substring(0, 8)}...<br>
@@ -93,6 +105,8 @@ socket.on('disconnect', () => {
 });
 
 socket.on('receive-location', (data) => {
+  if (!data || !data.id || data.lat == null || data.lon == null) return;
+  
   const { id, lat, lon, ts } = data;
   
   users[id] = {
@@ -105,10 +119,14 @@ socket.on('receive-location', (data) => {
 });
 
 socket.on('user-disconnected', (id) => {
-  removeMarker(id);
+  if (id) {
+    removeMarker(id);
+  }
 });
 
 socket.on('user-connected', (data) => {
+  if (!data || !data.id) return;
+  
   const { id } = data;
   users[id] = {
     id: id,
@@ -118,8 +136,10 @@ socket.on('user-connected', (data) => {
 });
 
 socket.on('existing-users', (existingUsers) => {
+  if (!Array.isArray(existingUsers)) return;
+  
   existingUsers.forEach(user => {
-    if (user && user.id && user.lat && user.lon) {
+    if (user && user.id && user.lat != null && user.lon != null) {
       users[user.id] = {
         id: user.id,
         lastSeen: user.ts
@@ -134,14 +154,28 @@ socket.on('clear-markers', () => {
   clearMarkers();
 });
 
+
 shareBtn.addEventListener('click', () => {
   if (!navigator.geolocation) {
     alert('Geolocation is not supported by your browser.');
     return;
   }
 
+
+  shareBtn.textContent = 'Getting Location...';
+  shareBtn.disabled = true;
+  
   navigator.geolocation.getCurrentPosition(
     (position) => {
+
+      shareBtn.textContent = 'Share My Location';
+      shareBtn.disabled = false;
+      
+      if (!position || !position.coords) {
+        alert('Unable to get your location.');
+        return;
+      }
+      
       const data = {
         lat: position.coords.latitude,
         lon: position.coords.longitude,
@@ -151,25 +185,32 @@ shareBtn.addEventListener('click', () => {
       socket.emit('send-location', data);
     },
     (error) => {
-      switch(error.code) {
-        case error.PERMISSION_DENIED:
-          alert("User denied the request for Geolocation.");
-          break;
-        case error.POSITION_UNAVAILABLE:
-          alert("Location information is unavailable.");
-          break;
-        case error.TIMEOUT:
-          alert("The request to get user location timed out.");
-          break;
-        default:
-          alert("An unknown error occurred.");
-          break;
+ 
+      shareBtn.textContent = 'Share My Location';
+      shareBtn.disabled = false;
+      
+      let errorMessage = "Unable to get your location.";
+      
+      if (error) {
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = "Location access denied. Please enable location services.";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = "Location information is unavailable.";
+            break;
+          case error.TIMEOUT:
+            errorMessage = "Location request timed out.";
+            break;
+        }
       }
+      
+      alert(errorMessage);
     },
     {
       enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0
+      timeout: 15000,
+      maximumAge: 60000
     }
   );
 });
