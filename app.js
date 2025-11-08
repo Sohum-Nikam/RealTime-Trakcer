@@ -3,36 +3,67 @@ const app = express();
 const path = require('path');
 const http = require('http');
 
-const socketio = require('socket.io'); // Corrected import
 const server = http.createServer(app);
-const io = socketio(server);
+const { Server } = require('socket.io');
+const io = new Server(server);
 
-// Set view engine and public folder for static files
+// Configure view engine and static files
 app.set('view engine', 'ejs');
-app.use(express.static(path.join(__dirname, "public"))); // Fixed static files setup
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.static(path.join(__dirname, 'public')));
 
-io.on("connection", function (socket) {
-    console.log(`New connection: ${socket.id}`);
-
-    // Handle location data from client
-    socket.on("send-location", function (data) {
-        io.emit("receive-location", { id: socket.id, ...data }); // Fixed typo in event name
-    });
-
-    // Handle user disconnection
-    socket.on("disconnect", function () {
-        console.log(`User disconnected: ${socket.id}`);
-        io.emit("user-disconnected", socket.id);
-    });
-});
-
-// Route for the home page
+// Serve the main page
 app.get('/', (req, res) => {
-    res.render("index");
+  res.render('index');
 });
 
-// Start the server
-const PORT = 3009;
+// Store active users and their locations
+const activeUsers = new Map();
+
+// Handle socket connections
+io.on('connection', (socket) => {
+  console.log(`User connected: ${socket.id}`);
+  
+  // Send existing users to the newly connected user
+  socket.emit('existing-users', Array.from(activeUsers.values()));
+  
+  // Handle location updates
+  socket.on('send-location', (data) => {
+    // Validate data
+    if (typeof data.lat !== 'number' || typeof data.lon !== 'number') {
+      return;
+    }
+    
+    // Store user data
+    const userData = {
+      id: socket.id,
+      lat: data.lat,
+      lon: data.lon,
+      ts: data.ts
+    };
+    
+    activeUsers.set(socket.id, userData);
+    
+    // Broadcast location to all clients except sender
+    socket.broadcast.emit('receive-location', userData);
+  });
+  
+  // Handle clear markers request
+  socket.on('clear-markers', () => {
+    activeUsers.clear();
+    io.emit('clear-markers');
+  });
+  
+  // Handle user disconnection
+  socket.on('disconnect', () => {
+    console.log(`User disconnected: ${socket.id}`);
+    activeUsers.delete(socket.id);
+    io.emit('user-disconnected', socket.id);
+  });
+});
+
+// Start server
+const PORT = process.env.PORT || 3009;
 server.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });
